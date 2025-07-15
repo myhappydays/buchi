@@ -1,0 +1,7 @@
+{
+  "http_port": 28244,
+  "serial": {
+    "baud_rate": 115200,
+    "enabled": false
+  }
+}

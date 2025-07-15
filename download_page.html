@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Buchi</title>
+    <link href="https://cdn.jsdelivr.net/gh/spoqa/spoqa-han-sans@3.2.1/css/SpoqaHanSansNeo.css" rel="stylesheet" type="text/css">
+    <style>
+        :root {
+            --main-color: #12574A;
+            --font-family: 'Spoqa Han Sans Neo', 'sans-serif';
+        }
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background: #fff;
+            color: #222;
+            font-family: var(--font-family);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: stretch;
+        }
+        .center-area {
+            flex: 1 0 auto;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 80vh;
+            padding-top: 5vh;
+        }
+        .buchi-title {
+            font-size: 23px;
+            font-weight: 800;
+            color: var(--main-color);
+            letter-spacing: 1px;
+            margin-bottom: 36px;
+            text-align: center;
+            user-select: none;
+        }
+        .wrap {
+            max-width: 420px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 0 18px;
+        }
+        .file-name {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            word-break: break-all;
+            color: var(--main-color);
+            text-align: left;
+        }
+        .file-details {
+            color: #444;
+            font-size: 15px;
+            margin-bottom: 18px;
+            text-align: left;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 7px;
+            background: #e3ecea;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: var(--main-color);
+            width: 0%;
+            transition: width 0.3s cubic-bezier(.4,1.4,.6,1);
+            border-radius: 4px;
+        }
+        .progress-info {
+            display: flex;
+            justify-content: flex-start;
+            gap: 18px;
+            font-size: 13px;
+            color: #555;
+            margin-bottom: 8px;
+        }
+        .speed {
+            font-weight: 600;
+            color: var(--main-color);
+        }
+        .loading {
+            margin: 18px 0;
+            color: #888;
+            font-size: 15px;
+            text-align: left;
+        }
+        @media (max-width: 600px) {
+            .center-area { padding-top: 2vh; }
+            .buchi-title { font-size: 19px; margin-bottom: 22px; }
+            .wrap { padding: 0 8px; }
+            .file-name { font-size: 17px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="center-area">
+        <div class="wrap">
+            <div class="file-name" id="fileName">파일 정보 로딩 중...</div>
+            <div class="file-details" id="fileDetails">잠시만 기다려주세요</div>
+            <div class="loading" id="loading" style="display:none;">파일 정보를 가져오는 중...</div>
+            <div id="progressArea" style="display:none;">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-info">
+                    <span id="progressText">0%</span>
+                    <span class="speed" id="speedText">0 KB/s</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        let fileInfo = null;
+
+        window.onload = function() {
+            loadFileInfo();
+        };
+
+        function loadFileInfo() {
+            document.getElementById('loading').style.display = 'block';
+            const urlParams = new URLSearchParams(window.location.search);
+            const token = urlParams.get('token');
+            fetch('/api/fileinfo?token=' + token)
+                .then(response => response.json())
+                .then(data => {
+                    fileInfo = data;
+                    displayFileInfo(data);
+                    document.getElementById('loading').style.display = 'none';
+                    startDownload();
+                })
+                .catch(error => {
+                    document.getElementById('fileName').textContent = '파일 정보 로드 실패';
+                    document.getElementById('fileDetails').textContent = '다시 시도해주세요';
+                    document.getElementById('loading').style.display = 'none';
+                });
+        }
+
+        function displayFileInfo(info) {
+            document.getElementById('fileName').textContent = info.name;
+            const size = formatFileSize(info.size);
+            const type = info.type || 'Unknown';
+            document.getElementById('fileDetails').innerHTML = 
+                `<span>크기: ${size}</span><br>` +
+                `<span>타입: ${type}</span>`;
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function startDownload() {
+            if (!fileInfo) return;
+            document.getElementById('progressArea').style.display = 'block';
+            fetchWithProgress('/download?token=' + (new URLSearchParams(window.location.search).get('token')), fileInfo.name, fileInfo.size);
+        }
+
+        async function fetchWithProgress(url, filename, totalSize) {
+            const response = await fetch(url);
+            if (!response.ok) {
+                alert('다운로드 실패: ' + response.statusText);
+                return;
+            }
+            const reader = response.body.getReader();
+            let receivedLength = 0;
+            let chunks = [];
+            const startTime = Date.now();
+            while (true) {
+                const {done, value} = await reader.read();
+                if (done) break;
+                chunks.push(value);
+                receivedLength += value.length;
+                const percent = (receivedLength / totalSize) * 100;
+                updateProgress(percent);
+                const elapsed = (Date.now() - startTime) / 1000;
+                const speed = receivedLength / elapsed;
+                document.getElementById('speedText').textContent = formatFileSize(speed) + '/s';
+            }
+            const blob = new Blob(chunks);
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            updateProgress(100);
+        }
+
+        function updateProgress(percent) {
+            const progressFill = document.getElementById('progressFill');
+            const progressText = document.getElementById('progressText');
+            progressFill.style.width = percent + '%';
+            progressText.textContent = Math.round(percent) + '%';
+        }
+    </script>
+</body>
+</html>
